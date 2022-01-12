@@ -28,7 +28,7 @@ spec:
         spec:
           serviceAccountName: kube-backup
           containers:
-          - image: gcr.io/delfos-242914/kube-backup:0.1.5-alpine
+          - image: XXX
             imagePullPolicy: Always
             name: backup
             resources: {}
@@ -36,15 +36,15 @@ spec:
               runAsUser: 1000
             env:
             - name: GIT_REPO
-              value: "https://server_pull:glpat-sh394A_oXQSJDxgDDJoy@gitlab.delfos.im/delfosinfra/gke-backup.git"
+              value: XXX
             - name: RESOURCETYPES
               value: "ingress deployment configmap svc secret ds statefulset cronjob"
             - name: GIT_PREFIX_PATH
-              value: "cluster-miner"
+              value: XXX
             - name: GLOBALRESOURCES
               value: "namespaces"
             - name: NAMESPACES
-              value: "airflow airflow-old airflow-sandbox airflow-exec calcs crawler ftp-watcher miner opc-cloud tools"
+              value: "a b c d"
             volumeMounts:
             - mountPath: /backup/
               name: cache
