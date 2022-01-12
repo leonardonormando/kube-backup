@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: kube-backup
-  namespace: kube-system
+  namespace: tools
 
 ---
 
@@ -10,14 +10,14 @@ apiVersion: batch/v1beta1
 kind: CronJob
 metadata:
   name: kube-state-backup
-  namespace: kube-system
+  namespace: tools
   labels:
     app: kube-backup
 spec:
-  schedule: "*/10 * * * *"
+  schedule: "*/15 * * * *"
   concurrencyPolicy: Replace
-  successfulJobsHistoryLimit: 3
-  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
   jobTemplate:
     spec:
       template:
@@ -26,8 +26,9 @@ spec:
             app: kube-backup
           name: kube-backup
         spec:
+          serviceAccountName: kube-backup
           containers:
-          - image: quay.io/plange/kube-backup:1.12.0-1
+          - image: gcr.io/delfos-242914/kube-backup:0.1.5-alpine
             imagePullPolicy: Always
             name: backup
             resources: {}
@@ -35,15 +36,20 @@ spec:
               runAsUser: 1000
             env:
             - name: GIT_REPO
-              value: "git@git.example.com:infra/kube-backup.git"
+              value: "https://server_pull:glpat-sh394A_oXQSJDxgDDJoy@gitlab.delfos.im/delfosinfra/gke-backup.git"
             - name: RESOURCETYPES
-              value: "ingress deployment configmap svc rc ds customresourcedefinition networkpolicy statefulset storageclass cronjob"
+              value: "ingress deployment configmap svc secret ds statefulset cronjob"
+            - name: GIT_PREFIX_PATH
+              value: "cluster-miner"
+            - name: GLOBALRESOURCES
+              value: "namespaces"
+            - name: NAMESPACES
+              value: "airflow airflow-old airflow-sandbox airflow-exec calcs crawler ftp-watcher miner opc-cloud tools"
             volumeMounts:
             - mountPath: /backup/
               name: cache
           dnsPolicy: ClusterFirst
           terminationGracePeriodSeconds: 30
-          serviceAccountName: kube-backup
           volumes:
           - name: cache
             emptyDir: {}
