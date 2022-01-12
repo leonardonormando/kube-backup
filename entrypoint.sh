@@ -19,7 +19,7 @@ GITCRYPT_PRIVATE_KEY="${GITCRYPT_PRIVATE_KEY:-"/secrets/gpg-private.key"}"
 GITCRYPT_SYMMETRIC_KEY="${GITCRYPT_SYMMETRIC_KEY:-"/secrets/symmetric.key"}"
 
 if [[ ! -f /backup/.ssh/id_rsa ]]; then
-    git config --global credential.helper '!aws codecommit credential-helper $@'
+    git config --global credential.helper store
     git config --global credential.UseHttpPath true
 fi
 [ -z "$DRY_RUN" ] && git config --global user.name "$GIT_USERNAME"
@@ -50,29 +50,47 @@ fi
 for resource in $GLOBALRESOURCES; do
     [ -d "$GIT_REPO_PATH/$GIT_PREFIX_PATH" ] || mkdir -p "$GIT_REPO_PATH/$GIT_PREFIX_PATH"
     echo "Exporting resource: ${resource}" >/dev/stderr
-    kubectl get -o=json "$resource" | jq --sort-keys \
+    kubectl get -o=yaml "$resource" | yq -M eval \
         'del(
           .items[].metadata.annotations."kubectl.kubernetes.io/last-applied-configuration",
           .items[].metadata.annotations."control-plane.alpha.kubernetes.io/leader",
+          .items[].metadata.annotations."cattle.io/status",
+          .items[].metadata.annotations."field.cattle.io/projectId",
+          .items[].metadata.annotations."objectset.rio.cattle.io/applied",
+          .items[].metadata.annotations."objectset.rio.cattle.io/id",
+          .items[].metadata.annotations."lifecycle.cattle.io/create.namespace-auth",
+          .items[].metadata.labels."field.cattle.io/projectId",
+          .items[].metadata.labels."objectset.rio.cattle.io/hash",
           .items[].metadata.uid,
           .items[].metadata.selfLink,
           .items[].metadata.resourceVersion,
           .items[].metadata.creationTimestamp,
-          .items[].metadata.generation
-      )' | python -c 'import sys, yaml, json; yaml.safe_dump(json.load(sys.stdin), sys.stdout, default_flow_style=False)' >"$GIT_REPO_PATH/$GIT_PREFIX_PATH/${resource}.yaml"
+          .items[].metadata.generation,
+          .items[].metadata.managedFields,
+          .items[].metadata.finalizers,
+          .items[].spec.finalizers,
+          .items[].status
+      )' - >"$GIT_REPO_PATH/$GIT_PREFIX_PATH/${resource}.yaml"
 done
 
 for namespace in $NAMESPACES; do
+
     [ -d "$GIT_REPO_PATH/$GIT_PREFIX_PATH/${namespace}" ] || mkdir -p "$GIT_REPO_PATH/$GIT_PREFIX_PATH/${namespace}"
 
     for type in $RESOURCETYPES; do
+
+        # Create dir structure
+        [ -d "$GIT_REPO_PATH/$GIT_PREFIX_PATH/${namespace}/${type}" ] || mkdir -p "$GIT_REPO_PATH/$GIT_PREFIX_PATH/${namespace}/${type}"
+
         echo "[${namespace}] Exporting resources: ${type}" >/dev/stderr
 
         label_selector=""
+
         if [[ "$type" == 'configmap' && -z "${INCLUDE_TILLER_CONFIGMAPS:-}" ]]; then
             label_selector="-l OWNER!=TILLER"
         fi
 
+        # Get resource name
         kubectl --namespace="${namespace}" get "$type" $label_selector -o custom-columns=SPACE:.metadata.namespace,KIND:..kind,NAME:.metadata.name --no-headers | while read -r a b name; do
             [ -z "$name" ] && continue
 
@@ -81,18 +99,46 @@ for namespace in $NAMESPACES; do
             continue
         fi
 
-        kubectl --namespace="${namespace}" get -o=json "$type" "$name" | jq --sort-keys \
+        # Export configmap directly as YALM
+        if [[ "$type" == 'configmap' ]]; then
+            kubectl --namespace="${namespace}" get -o=yaml "$type" "$name" | yq -M eval \
+            'del(
+                .metadata.creationTimestamp,
+                .metadata.generation,
+                .metadata.managedFields,
+                .metadata.resourceVersion,
+                .metadata.selfLink,
+                .metadata.uid,
+                .metadata.annotations."kubectl.kubernetes.io/last-applied-configuration"
+                )' - > "$GIT_REPO_PATH/$GIT_PREFIX_PATH/${namespace}/${type}/${name}.yaml"
+            continue
+        fi
+
+        kubectl --namespace="${namespace}" get -o=yaml "$type" "$name" | yq -M eval \
         'del(
             .metadata.annotations."control-plane.alpha.kubernetes.io/leader",
             .metadata.annotations."kubectl.kubernetes.io/last-applied-configuration",
+            .metadata.annotations."field.cattle.io/publicEndpoints",
+            .metadata.annotations."field.cattle.io/creatorId",
+            .metadata.annotations."field.cattle.io/projectId",
+            .metadata.annotations."cattle.io/timestamp",
+            .metadata.annotations."cattle.io/status",
+            .metadata.annotations."field.cattle.io/ports",
+            .metadata.annotations."field.cattle.io/ipAddresses",
+            .metadata.annotations."field.cattle.io/targetDnsRecordIds",
+            .metadata.annotations."field.cattle.io/targetWorkloadIds",
+            .metadata.annotations."workload.cattle.io/targetWorkloadIdNoop",
+            .metadata.annotations."workload.cattle.io/workloadPortBased",
+            .metadata.labels."cattle.io/creator",
             .metadata.creationTimestamp,
             .metadata.generation,
+            .metadata.managedFields,
             .metadata.resourceVersion,
             .metadata.selfLink,
             .metadata.uid,
             .spec.clusterIP,
             .status
-        )' | python -c 'import sys, yaml, json; yaml.safe_dump(json.load(sys.stdin), sys.stdout, default_flow_style=False)' >"$GIT_REPO_PATH/$GIT_PREFIX_PATH/${namespace}/${name}.${type}.yaml"
+        )' - > "$GIT_REPO_PATH/$GIT_PREFIX_PATH/${namespace}/${type}/${name}.yaml"
         done
     done
 done
