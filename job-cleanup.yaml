@@ -1,12 +1,12 @@
-apiVersion: batch/v2alpha1
+apiVersion: batch/v1beta1
 kind: CronJob
 metadata:
   name: kube-state-backup-cleaner
-  namespace: kube-system
+  namespace: tools
   labels:
-    app: kube-backup-cleaner
+    app: kube-backup
 spec:
-  schedule: "1 6 * * *"
+  schedule: "30 7 * * *"
   concurrencyPolicy: Replace
   jobTemplate:
     spec:
@@ -14,13 +14,14 @@ spec:
         metadata:
           name: job-cleanup
           labels:
-            app: kube-backup-cleaner
+            app: kube-backup
         spec:
           restartPolicy: OnFailure
+          serviceAccountName: kube-backup
           containers:
           - name: kubectl
             image: quay.io/coreos/hyperkube:v1.5.4_coreos.0
-            command: [ '/bin/bash', '-c', '/hyperkube kubectl get jobs -l app=kube-backup -o name --sort-by=metadata.creationTimestamp | head -n -2 | xargs /hyperkube kubectl delete; exit 0' ]
+            command: [ '/bin/bash', '-c', '/hyperkube kubectl get jobs -l app=kube-backup -o name --sort-by=metadata.creationTimestamp -n tools | head -n -1 | xargs /hyperkube kubectl delete -n tools; exit 0' ]
             resources:
               requests:
                 cpu: 0.1
